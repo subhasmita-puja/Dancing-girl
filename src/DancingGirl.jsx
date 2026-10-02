@@ -1,12 +1,136 @@
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Environment, useGLTF } from "@react-three/drei";
+import {
+  OrbitControls,
+  Environment,
+  useGLTF,
+  ContactShadows,
+  Sparkles,
+} from "@react-three/drei";
 import { useMemo, useRef } from "react";
 import { MathUtils } from "three";
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const ease = (x) => x * x * (3 - 2 * x); // smoothstep
 
-function GirlModel() {
+function ClubStage({ isPlaying, speed }) {
+  const redSpotRef = useRef();
+  const goldSpotRef = useRef();
+  const outerRingRef = useRef();
+  const innerRingRef = useRef();
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime() * (isPlaying ? speed : 0.25);
+    const pulse = (Math.sin(t * 4.5) + 1) * 0.5; // 0 to 1 beat pulse
+
+    // Sway spotlights across the stage
+    if (redSpotRef.current) {
+      redSpotRef.current.position.x = Math.sin(t * 1.5) * 3.5;
+      redSpotRef.current.intensity = isPlaying ? 3.5 + pulse * 2.5 : 2;
+    }
+    if (goldSpotRef.current) {
+      goldSpotRef.current.position.x = Math.cos(t * 1.5) * -3.5;
+      goldSpotRef.current.intensity = isPlaying ? 3 + (1 - pulse) * 2.5 : 1.8;
+    }
+
+    // Pulse neon floor rings on the beat
+    if (outerRingRef.current) {
+      const s = 1 + (isPlaying ? pulse * 0.06 : 0);
+      outerRingRef.current.scale.set(s, s, 1);
+    }
+    if (innerRingRef.current) {
+      const s = 1 + (isPlaying ? (1 - pulse) * 0.05 : 0);
+      innerRingRef.current.scale.set(s, s, 1);
+    }
+  });
+
+  return (
+    <group position={[0, -1.35, 0]}>
+      {/* Dynamic Colored Salsa Club Lights */}
+      <pointLight
+        ref={redSpotRef}
+        position={[3, 5, 2]}
+        color="#ff1e56"
+        intensity={4}
+        distance={15}
+      />
+      <pointLight
+        ref={goldSpotRef}
+        position={[-3, 5, 2]}
+        color="#ffac41"
+        intensity={3.5}
+        distance={15}
+      />
+      {/* Warm Front Key Light so her face is clearly visible */}
+      <pointLight
+        position={[0, 3.2, 3.2]}
+        color="#fff5eb"
+        intensity={2.8}
+        distance={10}
+      />
+      {/* Rim Backlight for Silhouette */}
+      <spotLight
+        position={[0, 6, -4]}
+        angle={0.6}
+        penumbra={0.8}
+        intensity={5}
+        color="#ec4899"
+      />
+
+      {/* Circular Dance Floor Stage */}
+      <mesh position={[0, -0.05, 0]} receiveShadow>
+        <cylinderGeometry args={[2.1, 2.3, 0.1, 64]} />
+        <meshStandardMaterial
+          color="#16060b"
+          metalness={0.85}
+          roughness={0.2}
+        />
+      </mesh>
+
+      {/* Inner Golden Glow Ring */}
+      <mesh
+        ref={innerRingRef}
+        position={[0, 0.01, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        <ringGeometry args={[1.5, 1.56, 64]} />
+        <meshBasicMaterial color="#fbbf24" />
+      </mesh>
+
+      {/* Outer Crimson Glow Ring */}
+      <mesh
+        ref={outerRingRef}
+        position={[0, 0.01, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        <ringGeometry args={[2.02, 2.1, 64]} />
+        <meshBasicMaterial color="#f43f5e" />
+      </mesh>
+
+      {/* Floating Fiesta Sparkles */}
+      <Sparkles
+        count={65}
+        scale={[7, 5, 7]}
+        position={[0, 2.2, 0]}
+        size={isPlaying ? 3.5 : 1.8}
+        speed={isPlaying ? 0.8 * speed : 0.2}
+        opacity={0.75}
+        color="#fde68a"
+      />
+
+      {/* Grounding Shadows under feet */}
+      <ContactShadows
+        position={[0, 0.01, 0]}
+        opacity={0.75}
+        scale={6}
+        blur={2}
+        far={4}
+        color="#000000"
+      />
+    </group>
+  );
+}
+
+function GirlModel({ isPlaying, speed }) {
   const { scene } = useGLTF("/models/girl_rigged_character.glb");
 
   // Find all bones
@@ -34,12 +158,16 @@ function GirlModel() {
   const time = useRef(0);
   const boneKeyCache = useRef({});
 
+  // Base Y position aligned with the raised stage
+  const BASE_Y = -1.35;
+
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05);
-    time.current += dt;
+    const activeSpeed = isPlaying ? speed : 0.2;
+    time.current += dt * activeSpeed;
     const t = time.current;
 
-    // Smoothing: bones chase their target instead of snapping (removes jitter)
+    const amp = isPlaying ? 1 : 0.22;
     const SMOOTH = 14;
 
     const moveBone = (name, x = 0, y = 0, z = 0) => {
@@ -59,28 +187,40 @@ function GirlModel() {
       const original = originalRotations[key];
       if (!bone || !original) return;
 
-      bone.rotation.x = MathUtils.damp(bone.rotation.x, original.x + x, SMOOTH, dt);
-      bone.rotation.y = MathUtils.damp(bone.rotation.y, original.y + y, SMOOTH, dt);
-      bone.rotation.z = MathUtils.damp(bone.rotation.z, original.z + z, SMOOTH, dt);
+      bone.rotation.x = MathUtils.damp(
+        bone.rotation.x,
+        original.x + x * amp,
+        SMOOTH,
+        dt
+      );
+      bone.rotation.y = MathUtils.damp(
+        bone.rotation.y,
+        original.y + y * amp,
+        SMOOTH,
+        dt
+      );
+      bone.rotation.z = MathUtils.damp(
+        bone.rotation.z,
+        original.z + z * amp,
+        SMOOTH,
+        dt
+      );
     };
 
     // =====================================================
     // RHYTHM
     // =====================================================
     const phase = t * 4.5;
-    const beat = Math.sin(phase); // side-to-side weight shift  (-1 .. 1)
-    const fastBeat = Math.sin(phase * 2); // knee-bounce / hand flick
-    const sway = Math.cos(phase); // 90° offset -> figure-eight hips
+    const beat = Math.sin(phase);
+    const fastBeat = Math.sin(phase * 2);
+    const sway = Math.cos(phase);
 
-    // Weight distribution: 1 = all weight on that leg
-    const weightL = 0.5 - 0.5 * beat; // weight on left when beat = -1
+    const weightL = 0.5 - 0.5 * beat;
     const weightR = 1 - weightL;
 
-    // Free leg lifts only while it is NOT carrying weight (smooth in/out)
     const liftL = ease(clamp01(beat));
     const liftR = ease(clamp01(-beat));
 
-    // Knee bounce: knees soften on every beat (twice per cycle)
     const bounce = 0.5 - 0.5 * Math.cos(phase * 2);
 
     // =====================================================
@@ -110,13 +250,13 @@ function GirlModel() {
     moveBone("CC_Base_R_Hand_083", 0, 0, -fastBeat * 0.15);
 
     // =====================================================
-    // PELVIS: tilt (hip drop) + yaw twist -> figure-eight hip motion
+    // PELVIS
     // =====================================================
     moveBone("CC_Base_Hip", 0, sway * 0.1, beat * 0.06);
     moveBone("CC_Base_Pelvis", 0, -sway * 0.12, -beat * 0.1);
 
     // =====================================================
-    // SPINE: counter-rotate so the shoulders stay calm
+    // SPINE
     // =====================================================
     moveBone("CC_Base_Waist", 0, sway * 0.07, beat * 0.03);
     moveBone("CC_Base_Spine01", 0, sway * 0.06, beat * 0.04);
@@ -124,20 +264,12 @@ function GirlModel() {
 
     // =====================================================
     // LEGS
-    // Supporting leg: slightly bent, knee softens with the bounce.
-    // Free leg: thigh lifts, knee folds, foot trails, then re-plants.
-    // Foot counter-rotates so the sole stays flat when planted.
     // =====================================================
     const leg = (weight, lift, side) => {
       const thighX = -lift * 0.42 - weight * 0.06 - bounce * weight * 0.07;
       const calfX = lift * 0.75 + weight * 0.1 + bounce * weight * 0.14;
-      // keep the foot flat on the floor when carrying weight,
-      // and let it point down a little when lifted
       const footX = -(thighX + calfX) * (0.4 + 0.6 * weight) + lift * 0.18;
-
-      // stance width: standing leg pushes out a touch, free leg crosses in
       const thighZ = side * (0.04 + weight * 0.03 - lift * 0.05);
-      // hip rotation follows the pelvis twist
       const thighY = -side * sway * 0.05;
 
       return { thighX, calfX, footX, thighZ, thighY };
@@ -155,37 +287,53 @@ function GirlModel() {
     moveBone("CC_Base_R_Foot", R.footX, 0, 0);
 
     // =====================================================
-    // HEAD: stays level, gently follows the beat
+    // HEAD
     // =====================================================
     moveBone("CC_Base_NeckTwist01", 0, -sway * 0.04, -beat * 0.02);
     moveBone("CC_Base_Head", 0, -sway * 0.05, -beat * 0.03);
 
     // =====================================================
-    // WHOLE BODY: shift over the supporting leg + drop on knee bend
-    // (this is what makes the step feel like it has weight)
+    // WHOLE BODY SHIFT
     // =====================================================
-    const targetX = beat * 0.05;
-    const targetY = -1.5 - bounce * 0.04;
+    const targetX = beat * 0.05 * amp;
+    const targetY = BASE_Y - bounce * 0.04 * amp;
     scene.position.x = MathUtils.damp(scene.position.x, targetX, SMOOTH, dt);
     scene.position.y = MathUtils.damp(scene.position.y, targetY, SMOOTH, dt);
   });
 
-  return <primitive object={scene} scale={2.5} position={[0, -1.5, 0]} />;
+  // Scale adjusted to 2.15 so her head & face stay fully in frame
+  return <primitive object={scene} scale={2.15} position={[0, BASE_Y, 0]} />;
 }
 
-function DancingGirl() {
+function DancingGirl({ isPlaying = true, speed = 1 }) {
   return (
     <Canvas
+      shadows
       camera={{
-        position: [0, 1.2, 5],
+        position: [0, 0.7, 5.6],
         fov: 45,
       }}
     >
-      <ambientLight intensity={1.5} />
-      <directionalLight position={[3, 5, 3]} intensity={2} />
-      <Environment preset="studio" />
-      <GirlModel />
-      <OrbitControls />
+      <color attach="background" args={["#0c0206"]} />
+      <fog attach="fog" args={["#0c0206", 6, 15]} />
+
+      <ambientLight intensity={1.1} />
+      <directionalLight position={[2, 5, 4]} intensity={1.6} color="#fff1e6" />
+
+      <Environment preset="night" />
+
+      <ClubStage isPlaying={isPlaying} speed={speed} />
+      <GirlModel isPlaying={isPlaying} speed={speed} />
+
+      {/* Target Y raised to 0.35 so the camera looks at her upper torso & face */}
+      <OrbitControls
+        enablePan={false}
+        minPolarAngle={Math.PI / 4}
+        maxPolarAngle={Math.PI / 2 - 0.02}
+        minDistance={3.2}
+        maxDistance={8}
+        target={[0, 0.35, 0]}
+      />
     </Canvas>
   );
 }
